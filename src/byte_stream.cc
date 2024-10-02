@@ -12,12 +12,11 @@ bool Writer::is_closed() const
 void Writer::push( string data )
 {
   uint64_t len = available_capacity();
-  if(len > data.size()) {
+  if ( len > data.size() ) {
     buf_ += data;
     pushcnt_ += data.size();
-  }
-  else {
-    buf_ += data.substr(0, len);
+  } else {
+    buf_ += data.substr( 0, len );
     pushcnt_ += len;
   }
   return;
@@ -26,52 +25,51 @@ void Writer::push( string data )
 void Writer::close()
 {
   close_ = true;
-  if(buf_.empty()) {
+  if ( buf_.empty() ) {
     finished_ = true;
   }
 }
 
 uint64_t Writer::available_capacity() const
 {
-  return {capacity_ - buf_.size()};
+  return capacity_ - buf_.size();
 }
 
 uint64_t Writer::bytes_pushed() const
 {
-  return {pushcnt_};
+  return pushcnt_;
 }
 
 bool Reader::is_finished() const
 {
-  return {finished_};
+  return finished_;
 }
 
 uint64_t Reader::bytes_popped() const
 {
   // Your code here.
-  return {popcnt_};
+  return popcnt_;
 }
 
 string_view Reader::peek() const
 {
-  return {buf_};
+  return buf_;
 }
 
 void Reader::pop( uint64_t len )
 {
-  if(len > buf_.size()) {
+  if ( len > buf_.size() ) {
     popcnt_ += buf_.size();
     buf_.clear();
-  }
-  else {
+  } else {
     popcnt_ += len;
-    buf_ = buf_.substr(len);
+    buf_ = buf_.substr( len );
   }
-  if(close_ && buf_.empty())
+  if ( close_ && buf_.empty() )
     finished_ = true;
 }
 
 uint64_t Reader::bytes_buffered() const
 {
-  return {buf_.size()};
+  return buf_.size();
 }
