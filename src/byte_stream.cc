@@ -47,7 +47,6 @@ bool Reader::is_finished() const
 
 uint64_t Reader::bytes_popped() const
 {
-  // Your code here.
   return popcnt_;
 }
 

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "byte_stream.hh"
+#include <vector>
+#include <list>
 
 class Reassembler
 {
@@ -42,4 +44,8 @@ public:
 
 private:
   ByteStream output_; // the Reassembler writes to this ByteStream
+  std::string data_ {};
+  std::list<std::pair<uint64_t, std::string>> sections_ {};
+  uint64_t start_ {};
+  uint64_t end_ {UINT64_MAX};
 };
