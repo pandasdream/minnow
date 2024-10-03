@@ -27,4 +27,10 @@ public:
 
 private:
   Reassembler reassembler_;
+  Wrap32 zero_point_ {0}; // random start 32bits seq
+  // Wrap32 seq_ {0};    // ack_seq starts 
+  // uint64_t aseq_ {0}; // checkpoint starts from 0, 64bits seq
+  bool syn_ {};
+  bool rst_ {};
+  bool fin_ {};
 };
