@@ -1,42 +1,104 @@
 #include "tcp_sender.hh"
 #include "tcp_config.hh"
+#include <iostream>
 
 using namespace std;
 
 uint64_t TCPSender::sequence_numbers_in_flight() const
 {
-  // Your code here.
-  return {};
+  return next_send_seq_ - next_ack_seq_;
 }
 
 uint64_t TCPSender::consecutive_retransmissions() const
 {
-  // Your code here.
-  return {};
+  return retrans_cnt;
 }
 
 void TCPSender::push( const TransmitFunction& transmit )
 {
-  // Your code here.
-  (void)transmit;
+  TCPSenderMessage send;
+  if(window_size_ == 0) {
+    win0_ = true;
+    window_size_ = 1;
+  }
+  ::read(input_.reader(), min(TCPConfig::MAX_PAYLOAD_SIZE, next_ack_seq_ + window_size_ - next_send_seq_), send.payload);
+  send.RST = input_.writer().has_error();
+  if(send.payload.size() == 0) {
+    send = make_empty_message();
+    send.SYN = next_send_seq_ == 0;
+  }
+  else {
+    send.seqno = Wrap32::wrap(next_send_seq_, isn_);
+    send.SYN = next_send_seq_ == 0;
+  }
+  if(next_ack_seq_ + window_size_ > next_send_seq_ + send.payload.size() && input_.writer().is_closed() && !fin_ && input_.reader().is_finished()) {
+    send.FIN = true;
+    fin_ = true;
+  }
+  next_send_seq_ += send.payload.size() + send.SYN + send.FIN;
+  if(send.SYN || send.FIN || send.payload.size() != 0) {
+    if(!timer_.isOn())
+      timer_ = Timer(ticks_, current_RTO_ms_ == 0 ? initial_RTO_ms_ : current_RTO_ms_);
+    outstandings_.push(send);
+    transmit(send);
+  }
+  if(!send.payload.empty()) push(transmit);
 }
 
 TCPSenderMessage TCPSender::make_empty_message() const
 {
-  // Your code here.
-  return {};
+  TCPSenderMessage send;
+  send.seqno = Wrap32::wrap(next_send_seq_, isn_);
+  send.RST = input_.writer().has_error();
+  return send;
 }
 
 void TCPSender::receive( const TCPReceiverMessage& msg )
 {
-  // Your code here.
-  (void)msg;
+  if(msg.RST) {
+    input_.set_error();
+    return;
+  }
+  optional<Wrap32> ackno = msg.ackno;
+  window_size_ = msg.window_size;
+  win0_ = window_size_ == 0;
+  if(ackno.has_value()) {
+    uint64_t abs_ack = ackno.value().unwrap(isn_, next_ack_seq_);
+    uint64_t abs_out = outstandings_.empty() ? next_ack_seq_ : outstandings_.back().seqno.unwrap(isn_, next_send_seq_) + outstandings_.back().payload.size() + outstandings_.back().SYN + outstandings_.back().FIN;
+    std::cout << window_size_ << " " << next_ack_seq_ << " " << abs_ack  << " " << abs_out << std::endl;
+    // abort
+    if(abs_out < abs_ack || abs_ack <= next_ack_seq_) return;
+    current_RTO_ms_ = initial_RTO_ms_;
+    while(!outstandings_.empty()) {
+      auto out_seg = outstandings_.front();
+      // auto &out_seg heap used after free?
+      if(out_seg.seqno == ackno) break;
+      if(out_seg.seqno.unwrap(isn_, next_ack_seq_) < abs_ack &&
+        abs_ack < out_seg.SYN + out_seg.seqno.unwrap(isn_, next_ack_seq_) + out_seg.payload.size() + out_seg.FIN) {
+        next_ack_seq_ = abs_ack;
+        break;
+      }
+      next_ack_seq_ = abs_ack;
+      outstandings_.pop();
+      if(out_seg.seqno + out_seg.SYN + out_seg.payload.size() + out_seg.FIN == ackno.value()) break;
+    }
+    timer_.set_off();
+    if(!outstandings_.empty()) timer_ = Timer(ticks_, current_RTO_ms_);
+  }
+  retrans_cnt = 0;
 }
 
 void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
 {
-  // Your code here.
-  (void)ms_since_last_tick;
-  (void)transmit;
-  (void)initial_RTO_ms_;
+  ticks_ += ms_since_last_tick;
+  // if(false) {
+  //   transmit(outstandings_.front());
+  // }
+  if(!outstandings_.empty() && timer_.alarm(ticks_)) {
+    auto resend = outstandings_.front();
+    transmit(resend);
+    if(!win0_) current_RTO_ms_ = current_RTO_ms_ == 0 ? initial_RTO_ms_ * 2 : current_RTO_ms_ * 2;
+    timer_ = Timer(ticks_, current_RTO_ms_);
+    if(!win0_) ++retrans_cnt;
+  }
 }

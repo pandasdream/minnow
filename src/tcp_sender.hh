@@ -11,6 +11,19 @@
 #include <optional>
 #include <queue>
 
+class Timer {
+  public:
+    Timer() = default;
+    Timer(uint64_t ticks, uint64_t current_RTO_ms) : alarm_time_ (current_RTO_ms + ticks), on_(true) {}; 
+    bool isOn() {return on_;}
+    bool alarm(uint64_t ticks) {return on_ && ticks >= alarm_time_;}
+    void set_off() {on_ = false;}
+    void set_on() {on_ = true;}
+  private:
+    uint64_t alarm_time_ {};
+    bool on_ {};
+};
+
 class TCPSender
 {
 public:
@@ -48,4 +61,17 @@ private:
   ByteStream input_;
   Wrap32 isn_;
   uint64_t initial_RTO_ms_;
+  uint64_t current_RTO_ms_ {};
+  Timer timer_ {};
+  std::queue<TCPSenderMessage> outstandings_ {};
+  uint32_t window_size_ {1};
+  Wrap32 ackno_ {0};
+  uint64_t next_send_seq_ {};
+  uint64_t next_ack_seq_ {};
+  // uint32_t next_seq_ {};
+  // uint32_t rest_len_ {};
+  bool fin_ {};
+  bool win0_ {};
+  uint64_t ticks_ {}; 
+  uint64_t retrans_cnt {};
 };
