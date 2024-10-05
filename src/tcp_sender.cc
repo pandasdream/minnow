@@ -23,14 +23,8 @@ void TCPSender::push( const TransmitFunction& transmit )
   }
   ::read(input_.reader(), min(TCPConfig::MAX_PAYLOAD_SIZE, next_ack_seq_ + window_size_ - next_send_seq_), send.payload);
   send.RST = input_.writer().has_error();
-  if(send.payload.size() == 0) {
-    send = make_empty_message();
-    send.SYN = next_send_seq_ == 0;
-  }
-  else {
-    send.seqno = Wrap32::wrap(next_send_seq_, isn_);
-    send.SYN = next_send_seq_ == 0;
-  }
+  send.SYN = next_send_seq_ == 0;
+  send.seqno = Wrap32::wrap(next_send_seq_, isn_);
   if(next_ack_seq_ + window_size_ > next_send_seq_ + send.payload.size() && input_.writer().is_closed() && !fin_ && input_.reader().is_finished()) {
     send.FIN = true;
     fin_ = true;
@@ -62,29 +56,25 @@ void TCPSender::receive( const TCPReceiverMessage& msg )
   optional<Wrap32> ackno = msg.ackno;
   window_size_ = msg.window_size;
   win0_ = window_size_ == 0;
-  if(ackno.has_value()) {
-    uint64_t abs_ack = ackno.value().unwrap(isn_, next_ack_seq_);
-    uint64_t abs_out = outstandings_.empty() ? next_ack_seq_ : outstandings_.back().seqno.unwrap(isn_, next_send_seq_) + outstandings_.back().payload.size() + outstandings_.back().SYN + outstandings_.back().FIN;
-    std::cout << window_size_ << " " << next_ack_seq_ << " " << abs_ack  << " " << abs_out << std::endl;
-    // abort
-    if(abs_out < abs_ack || abs_ack <= next_ack_seq_) return;
-    current_RTO_ms_ = initial_RTO_ms_;
-    while(!outstandings_.empty()) {
-      auto out_seg = outstandings_.front();
-      // auto &out_seg heap used after free?
-      if(out_seg.seqno == ackno) break;
-      if(out_seg.seqno.unwrap(isn_, next_ack_seq_) < abs_ack &&
-        abs_ack < out_seg.SYN + out_seg.seqno.unwrap(isn_, next_ack_seq_) + out_seg.payload.size() + out_seg.FIN) {
-        next_ack_seq_ = abs_ack;
-        break;
-      }
-      next_ack_seq_ = abs_ack;
-      outstandings_.pop();
-      if(out_seg.seqno + out_seg.SYN + out_seg.payload.size() + out_seg.FIN == ackno.value()) break;
+  // not connnected
+  if(!ackno.has_value()) return;
+  uint64_t abs_ack = ackno.value().unwrap(isn_, next_ack_seq_);
+  if(next_send_seq_ < abs_ack || abs_ack <= next_ack_seq_) return;
+  current_RTO_ms_ = initial_RTO_ms_;
+  next_ack_seq_ = abs_ack;
+  while(!outstandings_.empty()) {
+    auto& out_seg = outstandings_.front();
+    // auto &out_seg heap used after free?
+    if(out_seg.seqno == ackno) break;
+    if(out_seg.seqno.unwrap(isn_, next_ack_seq_) < abs_ack &&
+      abs_ack < out_seg.SYN + out_seg.seqno.unwrap(isn_, next_ack_seq_) + out_seg.payload.size() + out_seg.FIN) {
+      break;
     }
-    timer_.set_off();
-    if(!outstandings_.empty()) timer_ = Timer(ticks_, current_RTO_ms_);
+    outstandings_.pop();
+    // if(out_seg.seqno + out_seg.SYN + out_seg.payload.size() + out_seg.FIN == ackno.value()) break;
   }
+  timer_.set_off();
+  if(!outstandings_.empty()) timer_ = Timer(ticks_, current_RTO_ms_);
   retrans_cnt = 0;
 }
 
