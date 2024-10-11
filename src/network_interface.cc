@@ -29,6 +29,7 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
 {
   EthernetFrame frame;
   if(map_.count(next_hop.ipv4_numeric()) == 0) {
+    wait_vec_[next_hop.ipv4_numeric()].push_back(dgram);
     if(send_time_.count(next_hop.ipv4_numeric()) == 0 ||
     (send_time_.count(next_hop.ipv4_numeric()) && send_time_[next_hop.ipv4_numeric()] + 5000 < time_ms_)) {
       frame.header.dst = ETHERNET_BROADCAST;
@@ -44,7 +45,6 @@ void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Addre
       transmit(frame);
       send_time_[next_hop.ipv4_numeric()] = time_ms_;
     }
-    wait_vec_[next_hop.ipv4_numeric()].push_back(dgram);
   }
   else{
     frame.header.dst = map_[next_hop.ipv4_numeric()];
@@ -67,6 +67,7 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
     if(parse(arpmessage, frame.payload)) {
       map_[arpmessage.sender_ip_address] = arpmessage.sender_ethernet_address;
       expire_time_[arpmessage.sender_ip_address] = time_ms_ + 30000;
+      // cerr << "recv " << arpmessage.sender_ip_address << " " << arpmessage.opcode << "\n";
       if(arpmessage.opcode == ARPMessage::OPCODE_REQUEST &&
       arpmessage.target_ip_address == ip_address_.ipv4_numeric()) {
           ARPMessage reply_arp_message;
@@ -83,8 +84,8 @@ void NetworkInterface::recv_frame( const EthernetFrame& frame )
           transmit(send_frame);
       }
       for(auto& dgram : wait_vec_[arpmessage.sender_ip_address]) {
+        // cerr << "yes\n";
         send_datagram(dgram, Address::from_ipv4_numeric(arpmessage.sender_ip_address));
-        // dgram = dgram;
       }
       wait_vec_[arpmessage.sender_ip_address].clear();
     }

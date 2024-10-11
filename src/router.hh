@@ -35,4 +35,5 @@ public:
 private:
   // The router's collection of network interfaces
   std::vector<std::shared_ptr<NetworkInterface>> _interfaces {};
+  std::vector<std::pair<std::pair<uint32_t, uint8_t>, std::pair<std::optional<Address>, size_t>>> rtable {}; 
 };

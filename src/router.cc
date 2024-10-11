@@ -20,11 +20,37 @@ void Router::add_route( const uint32_t route_prefix,
        << static_cast<int>( prefix_length ) << " => " << ( next_hop.has_value() ? next_hop->ip() : "(direct)" )
        << " on interface " << interface_num << "\n";
 
-  // Your code here.
+  rtable.push_back(make_pair(make_pair(route_prefix, prefix_length), make_pair(next_hop, interface_num)));
 }
 
 // Go through all the interfaces, and route every incoming datagram to its proper outgoing interface.
 void Router::route()
 {
-  // Your code here.
+  for(auto itf : _interfaces) {
+    while(!(itf->datagrams_received().empty())) {
+      auto dgram = itf->datagrams_received().front();
+      itf->datagrams_received().pop();
+      if (dgram.header.ttl == 0 || --dgram.header.ttl == 0) return;
+      dgram.header.compute_checksum();
+      uint32_t dst {dgram.header.dst};
+      int j {-1};
+      for(size_t i = 0; i < rtable.size(); i++) {
+        auto r = rtable[i];
+        uint32_t route_prefix = r.first.first;
+        uint8_t prefix_length = r.first.second;
+        if(prefix_length == 0 && route_prefix == 0) {
+          if(j == -1) j = i;
+        }
+        else if((dst >> (32 - prefix_length) << (32 - prefix_length)) == route_prefix) {
+          if(j < 0 || rtable[j].first.second < prefix_length) j = static_cast<int>(i);
+        }
+      }
+      if(j >= 0) {
+        if(rtable[j].second.first.has_value())
+          interface(rtable[j].second.second)->send_datagram(dgram, rtable[j].second.first.value());
+        else
+          interface(rtable[j].second.second)->send_datagram(dgram, Address::from_ipv4_numeric(dgram.header.dst));
+      }
+    }
+  }
 }
